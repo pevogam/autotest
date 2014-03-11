@@ -292,7 +292,7 @@ def write_html_report(results_dir, report_path=None, encoding="utf8"):
     html_result = open(report_path, "wb")
     html_result.write(rendered_html.encode(encoding))
     html_result.close()
-    logging.info("Report successfully generated at %s", report_path)
+    logging.debug("Report successfully generated at %s", report_path)
 
 
 dirname = os.path.dirname(sys.modules[__name__].__file__)
