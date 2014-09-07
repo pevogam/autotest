@@ -254,12 +254,24 @@ class UnhandledTestError(TestError):
             TestError.__init__(self, unhandled_exception)
         else:
             msg = "Unhandled %s: %s"
-            msg %= (unhandled_exception.__class__.__name__,
-                    unhandled_exception)
-            if not isinstance(unhandled_exception, AutotestError):
-                msg += _context_message(unhandled_exception)
-            msg += "\n" + traceback.format_exc()
-            TestError.__init__(self, msg)
+            # detect exceptions raised on remote machines (code parts)
+            if getattr(unhandled_exception, "_pyroTraceback", None) is not None:
+                msg %= (getattr(unhandled_exception, "__customclass__",
+                                unhandled_exception.__class__.__name__),
+                        unhandled_exception)
+                # stitch seamless stack trace
+                local_tb_list = traceback.format_tb(sys.exc_info()[2])
+                tb_list = local_tb_list[:-2]
+                remote_tb_list = unhandled_exception._pyroTraceback
+                tb_list.extend(remote_tb_list[2:])
+                msg += "\n" + "".join(tb_list)
+            else:
+                msg %= (unhandled_exception.__class__.__name__,
+                        unhandled_exception)
+                if not isinstance(unhandled_exception, AutotestError):
+                    msg += _context_message(unhandled_exception)
+                msg += "\n" + traceback.format_exc()
+            TestError.__init__(self, msg.encode('ascii','ignore'))
 
 
 class UnhandledTestFail(TestFail):
@@ -273,12 +285,24 @@ class UnhandledTestFail(TestFail):
             TestFail.__init__(self, unhandled_exception)
         else:
             msg = "Unhandled %s: %s"
-            msg %= (unhandled_exception.__class__.__name__,
-                    unhandled_exception)
-            if not isinstance(unhandled_exception, AutotestError):
-                msg += _context_message(unhandled_exception)
-            msg += "\n" + traceback.format_exc()
-            TestFail.__init__(self, msg)
+            # detect exceptions raised on remote machines (code parts)
+            if getattr(unhandled_exception, "_pyroTraceback", None) is not None:
+                msg %= (getattr(unhandled_exception, "__customclass__",
+                                unhandled_exception.__class__.__name__),
+                        unhandled_exception)
+                # stitch seamless stack trace
+                local_tb_list = traceback.format_tb(sys.exc_info()[2])
+                tb_list = local_tb_list[:-2]
+                remote_tb_list = unhandled_exception._pyroTraceback
+                tb_list.extend(remote_tb_list[2:])
+                msg += "\n" + "".join(tb_list)
+            else:
+                msg %= (unhandled_exception.__class__.__name__,
+                        unhandled_exception)
+                if not isinstance(unhandled_exception, AutotestError):
+                    msg += _context_message(unhandled_exception)
+                msg += "\n" + traceback.format_exc()
+            TestFail.__init__(self, msg.encode('ascii','ignore'))
 
 
 class CmdError(TestError):
