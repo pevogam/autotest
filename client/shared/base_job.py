@@ -5,6 +5,7 @@ import fcntl
 import logging
 import os
 import re
+import shutil
 import tarfile
 import time
 import traceback
@@ -1270,9 +1271,9 @@ class base_job(object):
         # explicitly check that this subdirectory is new
         path = os.path.join(self.resultdir, subdir)
         if os.path.exists(path):
-            msg = ('%s already exists; multiple tests cannot run with the '
-                   'same subdirectory' % subdir)
-            raise error.TestError(msg)
+            logging.debug('%s already exists; multiple tests cannot run with the '
+                          'same subdirectory' % subdir)
+            shutil.rmtree(path, ignore_errors=True)  #raise error.TestError(msg)
 
         # create the outputdir and raise a TestError if it isn't valid
         try:
