@@ -1145,13 +1145,19 @@ def _wait_for_commands(bg_jobs, start_time, timeout):
     return True
 
 
+def getoutput(cmd):
+    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+    return proc.communicate()[0].decode().rstrip("\n\r")
+
+
 def get_children_pids(ppid):
     """
     Get all PIDs of children/threads of parent ppid
     param ppid: parent PID
     return: list of PIDs of all children/threads of ppid
     """
-    return (system_output("ps -L --ppid=%d -o lwp" % ppid).split('\n')[1:])
+    return getoutput("ps -L --ppid=%d -o lwp" % ppid).split('\n')[1:]
 
 
 def pid_is_alive(pid):

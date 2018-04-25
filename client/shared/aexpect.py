@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 """
 A class and functions used for running and controlling child processes.
 
@@ -44,11 +44,11 @@ def _unlock(fd):
 def _locked(filename):
     try:
         fd = os.open(filename, os.O_RDWR)
-    except Exception:
+    except OSError:
         return False
     try:
         fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except Exception:
+    except IOError:
         os.close(fd)
         return True
     fcntl.lockf(fd, fcntl.LOCK_UN)
@@ -89,9 +89,9 @@ def _makestandard(shell_fd, echo):
 
 def _get_filenames(base_dir, a_id):
     return [os.path.join(base_dir, a_id, s) for s in
-            "shell-pid", "status", "output", "inpipe", "ctrlpipe",
+            ("shell-pid", "status", "output", "inpipe", "ctrlpipe",
             "lock-server-running", "lock-client-starting",
-            "server-log"]
+            "server-log")]
 
 
 def _get_reader_filename(base_dir, a_id, reader):
@@ -166,7 +166,7 @@ if __name__ == "__main__":
         _makestandard(shell_fd, echo)
 
         server_log.info('Opening output file %s' % output_filename)
-        output_file = open(output_filename, "w")
+        output_file = open(output_filename, "wb")
         server_log.info('Opening input pipe %s' % inpipe_filename)
         os.mkfifo(inpipe_filename)
         inpipe_fd = os.open(inpipe_filename, os.O_RDWR)
@@ -183,16 +183,15 @@ if __name__ == "__main__":
 
         # Write shell PID to file
         server_log.info('Writing shell PID file %s' % shell_pid_filename)
-        fileobj = open(shell_pid_filename, "w")
-        fileobj.write(str(shell_pid))
-        fileobj.close()
+        with open(shell_pid_filename, "w") as file_obj:
+            file_obj.write(str(shell_pid))
 
         # Print something to stdout so the client can start working
-        print "Server %s ready" % a_id
+        print("Server %s ready" % a_id)
         sys.stdout.flush()
 
         # Initialize buffers
-        buffers = ["" for reader in readers]
+        buffers = [b"" for reader in readers]
 
         # Read from child and write to files/pipes
         server_log.info('Entering main read loop')
@@ -220,12 +219,12 @@ if __name__ == "__main__":
                 try:
                     data = os.read(shell_fd, 16384)
                 except OSError:
-                    data = ""
+                    data = b""
                 if not data:
                     check_termination = True
                 # Remove carriage returns from the data -- they often cause
                 # trouble and are normally not needed
-                data = data.replace("\r", "")
+                data = data.replace(b"\r", b"")
                 output_file.write(data)
                 output_file.flush()
                 for i in range(len(readers)):
@@ -242,9 +241,8 @@ if __name__ == "__main__":
                 os.write(shell_fd, data)
 
         server_log.info('Out of the main read loop. Writing status to %s' % status_filename)
-        fileobj = open(status_filename, "w")
-        fileobj.write(str(status))
-        fileobj.close()
+        with open(status_filename, "w") as file_obj:
+            file_obj.write(str(status))
 
         # Wait for the client to finish initializing
         _wait(lock_client_starting_filename)
@@ -517,6 +515,7 @@ class Spawn(object):
         """
         self.a_id = a_id or utils.generate_random_string(8)
         self.log_file = None
+        self.encoding = 'utf-8'
 
         base_dir = os.path.join(BASE_DIR, self.a_id)
 
@@ -564,14 +563,17 @@ class Spawn(object):
                                    shell=True,
                                    stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT)
+                                   stderr=subprocess.STDOUT,
+                                   close_fds=False)
             # Send parameters to the server
-            sub.stdin.write("%s\n" % self.a_id)
-            sub.stdin.write("%s\n" % echo)
-            sub.stdin.write("%s\n" % ",".join(self.readers))
-            sub.stdin.write("%s\n" % command)
+            sub.stdin.write(("%s\n" % self.a_id).encode(self.encoding))
+            sub.stdin.write(("%s\n" % echo).encode(self.encoding))
+            sub.stdin.write(("%s\n" % ",".join(self.readers)).encode(self.encoding))
+            sub.stdin.write(("%s\n" % command).encode(self.encoding))
+            sub.stdin.flush()
             # Wait for the server to complete its initialization
-            while "Server %s ready" % self.a_id not in sub.stdout.readline():
+            while ("Server %s ready" % self.a_id not in
+                   sub.stdout.readline().decode(self.encoding, "ignore")):
                 pass
 
         # Open the reading pipes
@@ -580,7 +582,7 @@ class Spawn(object):
             assert(_locked(self.lock_server_running_filename))
             for reader, filename in self.reader_filenames.items():
                 self.reader_fds[reader] = os.open(filename, os.O_RDONLY)
-        except Exception:
+        except (AssertionError, OSError):
             pass
 
         # Allow the server to continue
@@ -764,7 +766,7 @@ class Spawn(object):
         """
         try:
             fd = os.open(self.inpipe_filename, os.O_RDWR)
-            os.write(fd, cont)
+            os.write(fd, cont.encode())
             os.close(fd)
         except Exception:
             pass
@@ -973,19 +975,22 @@ class Tail(Spawn):
                 if _thread_kill_requested:
                     try:
                         os.close(fd)
-                    except:
+                    except OSError:
                         pass
                     return
                 try:
                     # See if there's any data to read from the pipe
                     r, w, x = select.select([fd], [], [], 0.05)
-                except Exception:
+                except (select.error, TypeError):
                     break
                 if fd in r:
                     # Some data is available; read it
                     new_data = os.read(fd, 1024)
                     if not new_data:
                         break
+                    new_data = new_data.decode(self.encoding, "ignore")
+                    if not new_data:    # all chars were ignored, skip round
+                        continue
                     bfr += new_data
                     # Send the output to output_func line by line
                     # (except for the last line)
@@ -1106,7 +1111,7 @@ class Expect(Tail):
             except Exception:
                 return data
             if fd in r:
-                new_data = os.read(fd, 1024)
+                new_data = os.read(fd, 1024).decode(self.encoding, "ignore")
                 if not new_data:
                     return data
                 data += new_data
@@ -1466,7 +1471,7 @@ class ShellSession(Expect):
         self.sendline(cmd)
         try:
             o = self.read_up_to_prompt(timeout, internal_timeout, print_func)
-        except ExpectError, e:
+        except ExpectError as e:
             o = self.remove_command_echo(e.output, cmd)
             if isinstance(e, ExpectTimeoutError):
                 raise ShellTimeoutError(cmd, o)
@@ -1512,7 +1517,7 @@ class ShellSession(Expect):
                 o += self.read_up_to_prompt(0.5)
                 success = True
                 break
-            except ExpectError, e:
+            except ExpectError as e:
                 o = self.remove_command_echo(e.output, cmd)
                 if isinstance(e, ExpectTimeoutError):
                     self.sendline()
@@ -1555,9 +1560,14 @@ class ShellSession(Expect):
             raise ShellStatusError(cmd, o)
 
         # Get the first line consisting of digits only
-        digit_lines = [l for l in s.splitlines() if l.strip().isdigit()]
+        digit_lines = []
+        for line in s.splitlines():
+            try:
+                digit_lines.append(int(line.strip()))
+            except ValueError:
+                pass
         if digit_lines:
-            return int(digit_lines[0].strip()), o
+            return digit_lines[0], o
         else:
             raise ShellStatusError(cmd, o)
 
